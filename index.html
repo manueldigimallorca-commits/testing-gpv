@@ -2,7 +2,7 @@
 <html lang="es" class="h-full">
 <head>
   <meta charset="UTF-8">
-  <meta name="app-version" content="v4.7.0">
+  <meta name="app-version" content="v4.7.1">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Cartera GPV | Consulta Pre-Visita</title>
   
@@ -48,8 +48,8 @@
       #settingsPanel { border-radius: 1rem; }
     }
   </style>
-  <link rel="stylesheet" href="./assets/utilities.css?v=v4.7.0">
-  <link rel="stylesheet" href="./assets/app.css?v=v4.7.0">
+  <link rel="stylesheet" href="./assets/utilities.css?v=v4.7.1">
+  <link rel="stylesheet" href="./assets/app.css?v=v4.7.1">
 </head>
 
 <body class="bg-slate-100 text-slate-800 antialiased font-sans min-h-full flex flex-col selection:bg-brand-yellow selection:text-brand-navy">
@@ -543,12 +543,12 @@
     <div id="dealerSummary">
     <div id="dTacticalAlert" class="p-4 rounded-2xl border bg-slate-50 border-slate-300 text-slate-800">
       <div class="font-black text-xs tracking-tight flex items-center gap-1.5 mb-2">
-        <span id="dTacticalTitle">Resumen de ventas</span>
+        <span id="dTacticalTitle">Comparativa de ventas</span>
       </div>
       <ul id="dTacticalList" class="text-xs leading-relaxed"><!-- Contenido generado con las proyecciones. --></ul>
     </div>
 
-    <!-- Resumen de ventas, sin campos de edición. -->
+    <!-- Copia del informe, después de la comparativa y sin campos de edición. -->
     <div id="dealerShare">
       <!-- Quick Action: Share to WhatsApp -->
       <button 
@@ -651,7 +651,7 @@
       </div>
 
       <div class="px-4 py-2 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between">
-        <span>Cartera GPV · v4.7.0</span>
+        <span>Cartera GPV · v4.7.1</span>
         <span>Sin datos precargados</span>
       </div>
     </div>
@@ -1619,13 +1619,13 @@
       const list = document.getElementById('dTacticalList');
       if (!box || !title || !list) return;
 
-      const products = [['fib', 'Fibra Smart'], ['tv', 'TV'], ['mov', 'Pospago'], ['p', 'Prepago']];
-      title.textContent = 'Resumen de ventas';
+      const products = [['fib', 'Fibra'], ['tv', 'TV'], ['mov', 'Pospago'], ['p', 'Prepago']];
+      title.textContent = 'Comparativa de ventas';
       list.innerHTML = products.map(([key, label]) => {
         const metrics = d[key] || {};
         const recent = salesComparisonText(metrics.proy, historicalAverage(metrics), key);
         const yearly = salesComparisonText(metrics.proy, metrics.ly, key, true);
-        return `<li><strong>${label}</strong><p><span class="comparison-label">Últimos 3 meses:</span> ${recent}.</p><p><span class="comparison-label">${yearly === 'Sin datos' ? 'Año anterior-' : 'Año anterior:'}</span> ${yearly}${yearly === 'Sin datos' ? '' : '.'}</p></li>`;
+        return `<li><strong>${label}</strong><p><span class="comparison-label">PROY actual vs media de los últimos 3 meses:</span> ${recent}.</p><p><span class="comparison-label">PROY actual vs año anterior:</span> ${yearly}${yearly === 'Sin datos' ? '' : '.'}</p></li>`;
       }).join('');
     }
 
