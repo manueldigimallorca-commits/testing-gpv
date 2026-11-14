@@ -1,0 +1,2068 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="app-version" content="v4.7.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Cartera GPV | Consulta Pre-Visita</title>
+  
+  <!-- Optimización Móvil y PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Cartera GPV">
+  <meta name="theme-color" content="#001e4d">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <!-- PWA: manifest + iconos -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png">
+
+  <!-- Todos los recursos se sirven desde esta carpeta, también sin conexión. -->
+  <link rel="preload" href="./assets/fonts/public-sans-variable.ttf" as="font" type="font/ttf" crossorigin>
+  <script defer src="./assets/vendor/xlsx.full.min.js"></script>
+
+  <!-- Base crítica; las utilidades completas se distribuyen como CSS local. -->
+  <style>
+    *, ::before, ::after { box-sizing: border-box; border-width: 0; border-style: solid; border-color: #e2e8f0; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; height: 100%; font-family: 'Public Sans', 'Segoe UI', Arial, sans-serif; background-color: #eef3f8; color: #1e293b; -webkit-font-smoothing: antialiased; }
+    .pb-safe { padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
+    .pt-safe { padding-top: max(0.75rem, env(safe-area-inset-top)); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    .hidden { display: none !important; }
+    button { cursor: pointer; background: transparent; }
+    input, textarea { font-family: inherit; }
+    svg { display: block; flex-shrink: 0; }
+    #toast.opacity-0 { opacity: 0; pointer-events: none; }
+    #toast.opacity-100 { opacity: 1; pointer-events: auto; }
+
+    /* El modal permanece oculto hasta que el usuario lo solicita. */
+    #settingsModal { position: fixed; inset: 0; z-index: 60; background: rgba(15, 23, 42, 0.62); display: flex; align-items: flex-end; justify-content: center; }
+    #settingsModal.hidden { display: none !important; }
+    #settingsPanel { background: #fff; width: 100%; max-width: 28rem; border-radius: 1rem 1rem 0 0; box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.28); max-height: 88vh; overflow-y: auto; }
+    @media (min-width: 640px) {
+      #settingsModal { align-items: center; padding: 1rem; }
+      #settingsPanel { border-radius: 1rem; }
+    }
+  </style>
+  <link rel="stylesheet" href="./assets/utilities.css?v=v4.7.0">
+  <link rel="stylesheet" href="./assets/app.css?v=v4.7.0">
+</head>
+
+<body class="bg-slate-100 text-slate-800 antialiased font-sans min-h-full flex flex-col selection:bg-brand-yellow selection:text-brand-navy">
+
+  <!-- ================= TOP APP BAR ================= -->
+  <header class="app-header sticky top-0 z-40 bg-brand-navy text-white border-b border-brand-800 pt-safe">
+    <div class="max-w-md mx-auto px-4 py-2.5 flex items-center justify-between">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-8 h-8 rounded-lg bg-brand-yellow flex items-center justify-center font-black text-brand-navy text-xs tracking-tighter shadow-sm">
+          GPV
+        </div>
+        <div>
+          <h1 class="text-sm font-bold tracking-tight leading-tight flex items-center gap-1.5">
+            Cartera GPV
+            <span id="syncStatusBadge" class="text-[9px] bg-slate-600 text-slate-200 font-bold px-1.5 py-0.5 rounded uppercase">Vacío</span>
+          </h1>
+          <p class="text-[11px] text-slate-300 font-medium">Tu próxima visita, en contexto</p>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-1.5">
+        <input type="file" id="excelFileInput" accept=".xlsx, .xls" class="hidden" onchange="window.handleFileUpload(event)">
+        <input type="file" id="backupFileInput" accept=".json,application/json" class="hidden" onchange="window.handleImportBackup(event)">
+        
+        <button 
+          onclick="window.triggerUpload()" 
+          class="text-xs bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white px-2.5 py-1.5 rounded-lg border border-emerald-400 transition flex items-center gap-1 font-bold shadow-sm"
+          title="Subir nuevo Excel actualizado"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+          <span>Cargar Excel</span>
+        </button>
+
+        <button 
+          onclick="window.resetSearch()" 
+          class="text-xs bg-brand-800 hover:bg-brand-700 active:scale-95 text-slate-200 px-2 py-1.5 rounded-lg border border-brand-700 transition"
+          title="Ir al buscador"
+          aria-label="Ir al buscador"
+        >
+          <svg class="w-3.5 h-3.5 text-brand-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </button>
+
+        <button 
+          onclick="window.openSettings()" 
+          class="text-xs bg-brand-800 hover:bg-brand-700 active:scale-95 text-slate-200 px-2 py-1.5 rounded-lg border border-brand-700 transition"
+          title="Ajustes y copia de seguridad"
+          aria-label="Ajustes y copia de seguridad"
+        >
+          <svg class="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+  <div class="device-status" role="status" aria-live="polite">
+    <div class="device-status-inner">
+      <span id="offlineStatus" data-state="pending">Preparando uso sin conexión…</span>
+      <span id="connectionStatus">Datos solo en este dispositivo</span>
+      <button id="updateAppBtn" type="button" class="hidden" onclick="window.applyAppUpdate()">Actualizar aplicación</button>
+    </div>
+  </div>
+
+  <!-- ================= FLOATING TOAST NOTIFICATION ================= -->
+  <div id="toast" role="status" aria-live="polite" class="fixed top-14 inset-x-0 mx-auto max-w-xs z-50 transform -translate-y-10 opacity-0 pointer-events-none transition-all duration-300 flex items-center justify-center">
+    <div class="bg-slate-900/95 text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-2xl border border-slate-700 flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-brand-yellow"></span>
+      <span id="toastMsg">Mensaje</span>
+    </div>
+  </div>
+
+  <!-- ================= VIEW 1: HOME SEARCH VIEW ================= -->
+  <main id="homeView" class="flex-1 max-w-md w-full mx-auto p-4 flex flex-col justify-start">
+
+    <!-- ESTADO VACÍO: la app arranca sin cartera precargada -->
+    <div id="emptyState">
+      <div class="welcome-panel bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="welcome-intro">
+        <div class="mx-auto w-14 h-14 rounded-2xl bg-brand-navy flex items-center justify-center mb-4 shadow-sm">
+          <svg class="w-7 h-7 text-brand-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+        </div>
+        <h2 class="text-base font-black text-brand-navy tracking-tight">Tu cartera, lista para la visita.</h2>
+        <p class="text-xs text-slate-500 mt-2 leading-relaxed">
+          Menos tiempo buscando en el Excel. Ventas y oportunidades de cada distribuidor, a mano cuando llegas a su tienda.
+        </p>
+        <div class="welcome-capabilities"><span>Ventas y previsiones</span><span>Consulta sin cobertura</span></div>
+        </div>
+        <div class="welcome-upload">
+        <h3>Empieza con tu Excel</h3>
+        <p>Selecciona el archivo CDM Móvil de tu cartera. Se lee aquí, sin subirlo a ningún servidor.</p>
+        <button
+          type="button"
+          onclick="window.triggerUpload()"
+          class="mt-5 w-full bg-brand-800 hover:bg-brand-700 active:bg-brand-navy text-white font-bold py-3.5 px-4 rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2"
+        >
+          <svg class="w-4 h-4 text-brand-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v12m0-12l-4 4m4-4l4 4M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1"/>
+          </svg>
+          <span>Cargar mi Excel</span>
+        </button>
+        <p class="text-[10px] text-slate-400 mt-3">Formato .xlsx / .xls · Puedes reemplazarlo cuando quieras</p>
+        </div>
+      </div>
+
+      <div class="mt-3 p-3 rounded-xl bg-blue-50 border border-blue-200 text-[11px] text-blue-900 leading-relaxed">
+        <strong>🔒 Tus datos son tuyos:</strong> la cartera se guarda solo en este dispositivo.
+        Nada se envía a ningún servidor.
+      </div>
+
+      <div class="mt-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+        <strong>💾 ¿Vas a cambiar de móvil?</strong> Usa el botón de ajustes (⚙️) de la cabecera para exportar
+        una copia de seguridad antes.
+      </div>
+    </div>
+
+    <!-- ESTADO CON CARTERA CARGADA -->
+    <div id="loadedState" class="hidden">
+    
+    <!-- Database Status Bar -->
+    <div id="portfolioStatus" class="bg-white rounded-2xl border border-slate-200/90 p-3 mb-3.5">
+      <div class="portfolio-heading flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <div class="text-xs font-bold text-slate-900">
+            <span id="dbDealersCount">0</span> <span id="dbDealersLabel">distribuidores en tu cartera</span>
+          </div>
+        </div>
+        <button 
+          onclick="window.triggerUpload()" 
+          class="text-[11px] font-bold text-brand-blue hover:text-brand-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition"
+        >
+          Cambiar Excel
+        </button>
+      </div>
+      <button id="editGoalsBtn" type="button" class="goals-trigger" onclick="window.openGoals()">Añadir objetivos</button>
+      <section id="portfolioTotals" aria-labelledby="portfolioTotalsTitle" role="status">
+        <div class="totals-heading">
+          <h3 id="portfolioTotalsTitle">Ventas actuales</h3>
+          <span>Acumulado del Excel · ACT</span>
+        </div>
+        <dl class="totals-grid">
+          <div class="total-product total-fibra"><dt>Fibra</dt><dd><strong id="totalFibraAct">s/d</strong><span class="total-goal"><span class="goal-label">Objetivo</span><span id="goalFibraPercent" class="goal-percentage"></span></span></dd></div>
+          <div class="total-product total-tv"><dt>TV</dt><dd><strong id="totalTvAct">s/d</strong><span class="total-goal"><span class="goal-label">Objetivo</span><span id="goalTvPercent" class="goal-percentage"></span></span></dd></div>
+          <div class="total-product total-pospago"><dt>Pospago</dt><dd><strong id="totalPospagoAct">s/d</strong><span class="total-goal"><span class="goal-label">Objetivo</span><span id="goalPospagoPercent" class="goal-percentage"></span></span></dd></div>
+          <div class="total-product total-prepago"><dt>Prepago</dt><dd><strong id="totalPrepagoAct">s/d</strong><span class="total-goal"><span class="goal-label">Objetivo</span><span id="goalPrepagoPercent" class="goal-percentage"></span></span></dd></div>
+        </dl>
+      </section>
+      <div id="dbLastUpdated" class="text-[10px] text-slate-500 font-medium">Base inicial cargada</div>
+    </div>
+
+    <!-- Main Search Card -->
+    <div id="searchPanel" class="bg-white rounded-2xl border border-slate-200 p-5">
+      <div class="flex items-center justify-between mb-1">
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-brand-yellow"></div>
+          <h2 class="text-base font-bold text-brand-navy tracking-tight">¿Qué tienda visitas hoy?</h2>
+        </div>
+      </div>
+      <p class="text-xs text-slate-500 mb-4">
+        Escribe el ID, nombre, código postal o rótulo y toca el resultado:
+      </p>
+
+      <form onsubmit="window.doSearch(event)" class="space-y-3 relative">
+        <div class="relative">
+          <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+            <svg class="w-5 h-5 text-brand-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/>
+            </svg>
+          </div>
+
+          <input 
+            type="search" 
+            id="searchInput" 
+            aria-label="Buscar por ID, nombre, código postal o rótulo"
+            placeholder="ID, nombre, CP o rótulo…" 
+            autocomplete="off"
+            autocorrect="off"
+            spellcheck="false"
+            oninput="window.handleLiveSearch(this.value)"
+            class="w-full pl-11 pr-10 py-3.5 bg-slate-50 border-2 border-slate-300 rounded-xl text-base font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:bg-white focus:outline-none focus:border-brand-blue focus:ring-4 focus:ring-brand-blue/10 transition tracking-wider"
+          >
+
+          <button 
+            type="button" 
+            id="clearSearchBtn" 
+            aria-label="Borrar búsqueda"
+            onclick="window.clearSearchField()" 
+            class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 hidden"
+          >
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Live Instant Suggestions List -->
+        <div id="autocompleteList" class="hidden bg-white border border-slate-300 rounded-xl shadow-xl overflow-hidden divide-y divide-slate-100 max-h-60 overflow-y-auto no-scrollbar">
+          <!-- Dynamically inserted suggestions -->
+        </div>
+
+        <button 
+          type="submit" 
+          class="w-full bg-brand-800 hover:bg-brand-700 active:bg-brand-navy text-white font-bold py-3.5 px-4 rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2"
+        >
+          <span>Ver distribuidor</span>
+          <svg class="w-4 h-4 text-brand-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+          </svg>
+        </button>
+      </form>
+
+      <!-- Not found error box -->
+      <div id="searchError" class="hidden mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+        <div class="font-bold flex items-center gap-1.5">
+          <svg class="w-4 h-4 text-rose-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span>Distribuidor no encontrado</span>
+        </div>
+        <p class="mt-1 text-slate-600 text-[11px]" id="searchErrorMsg">
+          Verifica que el número sea correcto o sube un nuevo Excel con el botón superior.
+        </p>
+      </div>
+    </div>
+
+    <!-- Recent Searches -->
+    <div id="recentsSection" class="mt-4">
+      <div class="flex items-center justify-between px-1 mb-2">
+        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-brand-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Últimas consultas
+        </h3>
+        <button onclick="window.clearRecents()" class="text-[10px] text-slate-400 hover:text-rose-600 font-medium">Borrar</button>
+      </div>
+
+      <div id="recentsList" class="flex flex-col gap-1.5">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+
+    </div><!-- /loadedState -->
+
+    <!-- Footer helper -->
+    <div class="mt-auto pt-6 text-center text-[11px] text-slate-400">
+      <p class="font-medium text-slate-500">Tus datos se quedan en este dispositivo</p>
+      <p class="text-[10px] text-slate-400 mt-0.5">Sin cuentas, sin servidores, sin sincronización</p>
+    </div>
+  </main>
+
+
+  <!-- ================= VIEW 2: DEDICATED DEALER TACTICAL CARD ================= -->
+  <main id="dealerView" class="hidden flex-1 max-w-md w-full mx-auto p-3 flex flex-col space-y-3 pb-safe">
+    
+    <!-- Top Back Button -->
+    <div class="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-xs">
+      <button 
+        onclick="window.resetSearch()" 
+        class="inline-flex items-center gap-1.5 text-xs font-black text-brand-navy hover:text-brand-blue active:scale-95 py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 transition"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/>
+        </svg>
+        <span>Buscar otra tienda</span>
+      </button>
+
+      <span id="dIdBadge" class="font-mono text-xs font-black bg-brand-navy text-brand-yellow px-2.5 py-1 rounded-lg">
+        ID: 0000000
+      </span>
+    </div>
+
+    <!-- Dealer Info Header -->
+    <div id="dealerIdentity" class="bg-white rounded-2xl p-4 border border-slate-200 relative overflow-hidden">
+      
+      <div class="pt-1">
+        <h2 id="dName" class="text-lg font-black text-slate-900 leading-snug tracking-tight">
+          Nombre del Distribuidor
+        </h2>
+
+        <!-- ALIAS / NOMBRE COMERCIAL Y CALLE (Persistente en móvil) -->
+        <div class="mt-1.5">
+          <div id="aliasDisplayRow" class="flex items-center gap-1.5 flex-wrap">
+            <span id="dAliasBadge" class="hidden text-xs font-bold text-brand-navy bg-amber-100/90 border border-amber-300 px-2.5 py-0.5 rounded-lg inline-flex items-center gap-1">
+              <span>🏪</span>
+              <span id="dAliasText"></span>
+            </span>
+          </div>
+
+        </div>
+
+        <p class="text-xs text-slate-500 font-medium mt-2 flex items-center gap-1">
+          <svg class="w-3.5 h-3.5 text-brand-blue shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+          </svg>
+          <span id="dLocation">s/d · s/d (s/d)</span>
+        </p>
+
+        <!-- Status Badges Strip -->
+        <div class="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+          <span id="dHuellaBadge" class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide bg-blue-100 text-blue-900 border border-blue-200">
+            Zona Smart
+          </span>
+          <span id="dFibraBadge" class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide bg-slate-100 text-slate-600 border border-slate-200">
+            Sin Acceso Fibra
+          </span>
+          <span id="dCatPrepagoBadge" class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-200">
+            Pre: Beginner
+          </span>
+          <span id="dAntiguedadBadge" class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200">
+            📅 Alta: --
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SALES EVOLUTION CARDS -->
+    <div id="dealerSales" class="space-y-2.5">
+      <div class="flex items-center justify-between px-1">
+        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">
+          Evolución de ventas
+        </h3>
+        <span class="text-[10px] text-slate-400 font-semibold">ACT → PROY → M-1 → M-2 → M-3 → LY</span>
+      </div>
+      <details class="trend-help"><summary>Cómo interpretar las previsiones</summary><p>El resumen compara PROY con la media de M-1, M-2 y M-3 y, por separado, con LY. Las diferencias pequeñas se consideran similares; distinguimos variaciones ligeras y claras teniendo en cuenta también las unidades. Si falta algún mes, no calculamos una media incompleta.</p><p>ACT: ventas acumuladas del mes. PROY: estimación del Excel, no un cierre real. M-1, M-2 y M-3: meses anteriores. LY: mismo mes del año anterior. s/d: dato no disponible.</p></details>
+
+      <!-- 1. FIBRA SMART (Se compacta automáticamente si no tiene acceso ni ventas) -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-3">
+        <div class="flex flex-wrap gap-2 items-center justify-between mb-1.5">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-brand-cyan"></span>
+            <span class="text-xs font-black text-slate-900">Fibra Smart</span>
+          </div>
+        </div>
+
+        <!-- Vista compacta si NO tiene acceso a Fibra -->
+        <div id="fibraCompactBar" class="hidden text-[11px] text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 font-medium">
+          Sin acceso comercial a Fibra actualmente en este punto.
+        </div>
+
+        <!-- Tabla 6 columnas si tiene acceso o histórico -->
+        <div id="fibraGrid" class="grid grid-cols-6 gap-1 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+          <div class="actual-cell">
+            <span class="block text-[9px] text-sky-900 font-black uppercase">ACT</span>
+            <span id="fib_act" class="text-xs font-black text-sky-950">0</span>
+          </div>
+          <div class="projection-cell bg-sky-50 rounded py-0.5">
+            <span class="block text-[9px] text-sky-800 font-bold uppercase">PROY</span>
+            <span id="fib_proy" class="text-xs font-black text-sky-900">0</span>
+          </div>
+          <div class="history-cell history-m1">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-1</span>
+            <span id="fib_m1" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m2">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-2</span>
+            <span id="fib_m2" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m3">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-3</span>
+            <span id="fib_m3" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div id="fib_ly_box" class="yearly-cell">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">LY</span>
+            <span id="fib_ly" class="text-xs font-bold text-slate-500">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. TV (Se oculta automáticamente cuando no aplica para evitar scroll) -->
+      <div id="cardTv" class="bg-white rounded-xl border border-slate-200 shadow-xs p-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-violet-600"></span>
+            <span class="text-xs font-black text-slate-900">TV</span>
+          </div>
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-50 text-violet-800">Servicio TV</span>
+        </div>
+        <div class="grid grid-cols-6 gap-1 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+          <div class="actual-cell">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">ACT</span>
+            <span id="tv_act" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="projection-cell">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">PROY</span>
+            <span id="tv_proy" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m1">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-1</span>
+            <span id="tv_m1" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m2">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-2</span>
+            <span id="tv_m2" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m3">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-3</span>
+            <span id="tv_m3" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="yearly-cell">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">LY</span>
+            <span id="tv_ly" class="text-xs font-bold text-slate-500">s/d</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. MÓVIL POSPAGO -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-3">
+        <div class="flex flex-wrap gap-2 items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-brand-blue"></span>
+            <span class="text-xs font-black text-slate-900">Móvil pospago</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-6 gap-1 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+          <div class="actual-cell">
+            <span class="block text-[9px] text-indigo-900 font-black uppercase">ACT</span>
+            <span id="mov_act" class="text-xs font-black text-indigo-950">0</span>
+          </div>
+          <div class="projection-cell bg-indigo-50 rounded py-0.5">
+            <span class="block text-[9px] text-indigo-800 font-bold uppercase">PROY</span>
+            <span id="mov_proy" class="text-xs font-black text-indigo-900">0</span>
+          </div>
+          <div class="history-cell history-m1">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-1</span>
+            <span id="mov_m1" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m2">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-2</span>
+            <span id="mov_m2" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m3">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-3</span>
+            <span id="mov_m3" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div id="mov_ly_box" class="yearly-cell">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">LY</span>
+            <span id="mov_ly" class="text-xs font-bold text-slate-500">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. PREPAGO -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-xs p-3">
+        <div class="flex flex-wrap gap-2 items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+            <span class="text-xs font-black text-slate-900">Prepago</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-6 gap-1 text-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+          <div class="actual-cell">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">ACT</span>
+            <span id="pre_act" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="projection-cell">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">PROY</span>
+            <span id="pre_proy" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m1">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-1</span>
+            <span id="pre_m1" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m2">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-2</span>
+            <span id="pre_m2" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div class="history-cell history-m3">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">M-3</span>
+            <span id="pre_m3" class="text-xs font-bold text-slate-700">0</span>
+          </div>
+          <div id="pre_ly_box" class="yearly-cell">
+            <span class="block text-[9px] text-slate-400 font-bold uppercase">LY</span>
+            <span id="pre_ly" class="text-xs font-bold text-slate-500">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resumen siempre después de las ventas, seguido del botón de WhatsApp. -->
+    <div id="dealerSummary">
+    <div id="dTacticalAlert" class="p-4 rounded-2xl border bg-slate-50 border-slate-300 text-slate-800">
+      <div class="font-black text-xs tracking-tight flex items-center gap-1.5 mb-2">
+        <span id="dTacticalTitle">Resumen de ventas</span>
+      </div>
+      <ul id="dTacticalList" class="text-xs leading-relaxed"><!-- Contenido generado con las proyecciones. --></ul>
+    </div>
+
+    <!-- Resumen de ventas, sin campos de edición. -->
+    <div id="dealerShare">
+      <!-- Quick Action: Share to WhatsApp -->
+      <button 
+        onclick="window.copyWhatsAppReport()" 
+        class="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition"
+      >
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+        </svg>
+        <span>Copiar resumen para WhatsApp</span>
+      </button>
+    </div>
+    </div>
+
+    <!-- Extra Bottom Padding for mobile navigation bars -->
+    <div class="dealer-bottom-space h-8"></div>
+  </main>
+
+
+  <!-- ================= MODAL AJUSTES / COPIA DE SEGURIDAD ================= -->
+  <div id="settingsModal" class="hidden" onclick="if (event.target === this) window.closeSettings()">
+    <div id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" tabindex="-1">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+        <h2 id="settingsTitle" class="text-sm font-black text-brand-navy">Ajustes y copia de seguridad</h2>
+        <button
+          type="button"
+          onclick="window.closeSettings()"
+          aria-label="Cerrar ajustes"
+          class="text-slate-400 hover:text-slate-700 text-base leading-none px-2 py-1 rounded-lg hover:bg-slate-100"
+        >✕</button>
+      </div>
+
+      <div class="p-4">
+        <p class="text-[11px] text-slate-500 leading-relaxed mb-3">
+          Todo se guarda en este navegador. Exporta una copia antes de cambiar de dispositivo
+          o de borrar los datos del navegador.
+        </p>
+
+        <button
+          type="button"
+          onclick="window.exportBackup()"
+          class="w-full flex items-center justify-between gap-2 bg-white border border-slate-300 rounded-xl px-3 py-3 text-left mb-2"
+        >
+          <span>
+            <span class="block text-xs font-bold text-slate-900">Exportar copia de seguridad</span>
+            <span class="block text-[10px] text-slate-500">Cartera, objetivos y datos antiguos (.json)</span>
+          </span>
+          <span class="text-brand-blue font-black text-base">⬇</span>
+        </button>
+
+        <button
+          type="button"
+          onclick="window.triggerImportBackup()"
+          class="w-full flex items-center justify-between gap-2 bg-white border border-slate-300 rounded-xl px-3 py-3 text-left mb-2"
+        >
+          <span>
+            <span class="block text-xs font-bold text-slate-900">Importar copia de seguridad</span>
+            <span class="block text-[10px] text-slate-500">Restaura desde un archivo .json</span>
+          </span>
+          <span class="text-brand-blue font-black text-base">⬆</span>
+        </button>
+
+        <button
+          type="button"
+          onclick="window.triggerUpload()"
+          class="w-full flex items-center justify-between gap-2 bg-white border border-slate-300 rounded-xl px-3 py-3 text-left mb-2"
+        >
+          <span>
+            <span class="block text-xs font-bold text-slate-900">Cargar / cambiar Excel</span>
+            <span class="block text-[10px] text-slate-500">Sustituye la cartera desde tu Excel</span>
+          </span>
+          <span class="text-emerald-600 font-black text-base">📄</span>
+        </button>
+
+        <div class="pt-3 mt-3 border-t border-slate-200">
+          <button
+            type="button"
+            id="installAppBtn"
+            onclick="window.installApp()"
+            class="hidden w-full flex items-center justify-between gap-2 bg-brand-navy text-white rounded-xl px-3 py-3 text-left mb-2"
+          >
+            <span>
+              <span class="block text-xs font-bold">Instalar en el móvil</span>
+              <span class="block text-[10px] text-slate-300">Acceso directo desde la pantalla de inicio</span>
+            </span>
+            <span class="text-brand-yellow font-black text-base">📲</span>
+          </button>
+
+          <button
+            type="button"
+            onclick="window.wipeAllData()"
+            class="w-full bg-rose-50 border border-rose-200 text-rose-800 rounded-xl px-3 py-3 text-xs font-bold text-left"
+          >
+            Borrar todos los datos de este dispositivo
+          </button>
+          <p class="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+            Elimina cartera, objetivos, notas, rótulos e historial. No se puede deshacer.
+          </p>
+        </div>
+      </div>
+
+      <div class="px-4 py-2 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between">
+        <span>Cartera GPV · v4.7.0</span>
+        <span>Sin datos precargados</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Objetivos personales: valores actuales, sin mes ni histórico. -->
+  <div id="goalsModal" class="hidden" onclick="if (event.target === this) window.closeGoals()">
+    <section id="goalsPanel" role="dialog" aria-modal="true" aria-labelledby="goalsTitle" aria-describedby="goalsHint" tabindex="-1">
+      <div class="goals-dialog-heading">
+        <h2 id="goalsTitle">Añadir objetivos</h2>
+        <button type="button" class="goals-close" onclick="window.closeGoals()" aria-label="Cerrar objetivos">✕</button>
+      </div>
+      <form id="goalsForm" onsubmit="window.saveGoals(event)" novalidate>
+        <p id="goalsHint">Introduce el objetivo de cada producto. Puedes dejar en blanco los que no tengas.</p>
+        <div class="goals-fields">
+          <div><label for="goalFibraInput">Fibra</label><input id="goalFibraInput" name="fib" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-describedby="goalsHint goalsError" placeholder="Opcional"></div>
+          <div><label for="goalTvInput">TV</label><input id="goalTvInput" name="tv" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-describedby="goalsHint goalsError" placeholder="Opcional"></div>
+          <div><label for="goalPospagoInput">Pospago</label><input id="goalPospagoInput" name="mov" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-describedby="goalsHint goalsError" placeholder="Opcional"></div>
+          <div><label for="goalPrepagoInput">Prepago</label><input id="goalPrepagoInput" name="p" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-describedby="goalsHint goalsError" placeholder="Opcional"></div>
+        </div>
+        <p id="goalsError" role="alert" class="hidden"></p>
+        <p class="goals-storage-hint">Se guardan solo en este dispositivo. Al cambiar de mes, edítalos o bórralos manualmente.</p>
+        <div class="goals-actions"><button type="button" class="goals-cancel" onclick="window.closeGoals()">Cancelar</button><button type="submit" class="goals-save">Guardar objetivos</button></div>
+        <button id="resetGoalsBtn" type="button" onclick="window.resetGoals()">Borrar objetivos</button>
+      </form>
+    </section>
+  </div>
+
+  <!-- ================= LOGIC & REAL EXCEL PARSER ================= -->
+  <script>
+
+    // STORAGE CONSTANTS (v4 incluye Fecha Firma y mejoras tácticas)
+    const STORAGE_KEY_DB = 'digi_dealers_db_v4';
+    const STORAGE_KEY_META = 'digi_dealers_meta_v4';
+    const STORAGE_KEY_RECENTS = 'digi_recents_ids';
+    const STORAGE_KEY_GOALS = 'digi_sales_goals_v1';
+    const NOTES_KEY_PREFIX = 'notes_';
+    const ALIAS_KEY_PREFIX = 'digi_alias_';
+
+    // APPLICATION STATE
+    let CURRENT_DEALERS_MAP = {};
+    let activeDealer = null;
+    const DEALER_ALIASES = new Map();
+    let settingsReturnFocus = null;
+    let goalsReturnFocus = null;
+    const GOAL_PRODUCTS = [
+      { key: 'fib', label: 'Fibra', input: 'goalFibraInput', output: 'goalFibraPercent' },
+      { key: 'tv', label: 'TV', input: 'goalTvInput', output: 'goalTvPercent' },
+      { key: 'mov', label: 'Pospago', input: 'goalPospagoInput', output: 'goalPospagoPercent' },
+      { key: 'p', label: 'Prepago', input: 'goalPrepagoInput', output: 'goalPrepagoPercent' }
+    ];
+    let SALES_GOALS = normalizeGoals({});
+
+    const MONTHS_ES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+    // --- GLOBAL INITIALIZATION ---
+    window.addEventListener('DOMContentLoaded', () => {
+      localStorage.removeItem('digi_dealers_db');
+      localStorage.removeItem('digi_dealers_meta');
+      localStorage.removeItem('digi_dealers_db_v2');
+      localStorage.removeItem('digi_dealers_meta_v2');
+      localStorage.removeItem('digi_dealers_db_v3');
+      localStorage.removeItem('digi_dealers_meta_v3');
+
+      loadDatabase();
+      renderRecents();
+
+      // Delegación: cualquier fila con data-dealer-id abre su ficha (sin onclick inline)
+      document.addEventListener('click', (ev) => {
+        const row = ev.target && ev.target.closest ? ev.target.closest('[data-dealer-id]') : null;
+        if (!row) return;
+        ev.preventDefault();
+        window.selectDealer(row.getAttribute('data-dealer-id'));
+      });
+      document.addEventListener('keydown', (ev) => {
+        const goalsModal = document.getElementById('goalsModal');
+        if (!goalsModal.classList.contains('hidden')) {
+          if (ev.key === 'Escape') { ev.preventDefault(); window.closeGoals(); }
+          if (ev.key === 'Tab') {
+            const controls = [...goalsModal.querySelectorAll('button, input')].filter(el => !el.disabled && el.getClientRects().length);
+            const first = controls[0], last = controls[controls.length - 1];
+            if (ev.shiftKey && (document.activeElement === first || document.activeElement === document.getElementById('goalsPanel'))) {
+              ev.preventDefault(); last?.focus();
+            } else if (!ev.shiftKey && document.activeElement === last) {
+              ev.preventDefault(); first?.focus();
+            }
+          }
+          return;
+        }
+        const modal = document.getElementById('settingsModal');
+        if (!modal.classList.contains('hidden')) {
+          if (ev.key === 'Escape') window.closeSettings();
+          if (ev.key === 'Tab') {
+            const controls = [...modal.querySelectorAll('button:not(.hidden), input, [tabindex="0"]')].filter(el => el.getClientRects().length);
+            const first = controls[0], last = controls[controls.length - 1];
+            if (ev.shiftKey && (document.activeElement === first || document.activeElement === document.getElementById('settingsPanel'))) {
+              ev.preventDefault(); last?.focus();
+            } else if (!ev.shiftKey && document.activeElement === last) {
+              ev.preventDefault(); first?.focus();
+            }
+          }
+          return;
+        }
+        const row = ev.target.closest?.('[data-dealer-id]');
+        if (row && (ev.key === 'Enter' || ev.key === ' ')) {
+          ev.preventDefault();
+          window.selectDealer(row.getAttribute('data-dealer-id'));
+        }
+      });
+
+      if (Object.keys(CURRENT_DEALERS_MAP).length > 0) {
+        const input = document.getElementById('searchInput');
+        if (input) input.focus();
+      }
+    });
+
+    // La app arranca SIEMPRE vacía: no hay cartera precargada.
+    // Cada comercial sube su propio Excel y se guarda solo en su dispositivo.
+    function loadDatabase() {
+      DEALER_ALIASES.clear();
+      loadGoals();
+      let stored = null;
+      try { stored = localStorage.getItem(STORAGE_KEY_DB); } catch(e) {}
+
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+            CURRENT_DEALERS_MAP = parsed;
+            let meta = {};
+            try { meta = JSON.parse(localStorage.getItem(STORAGE_KEY_META) || '{}') || {}; } catch(e) {}
+            // Versiones anteriores confundían las celdas vacías con cero.
+            // No interpretar esos ceros antiguos como una caída confirmada.
+            if (meta.projectionSchema !== 2) {
+              let needsReload = false;
+              Object.values(CURRENT_DEALERS_MAP).forEach(d => {
+                ['p', 'fib', 'mov', 'tv'].forEach(key => {
+                  if (d[key] && d[key].proy === 0) {
+                    d[key].proy = null;
+                    needsReload = true;
+                  }
+                });
+              });
+              if (needsReload) window.showToast('Recarga tu Excel para validar las proyecciones cero de la versión anterior.');
+            }
+            if (meta.historySchema !== 1) {
+              let needsReload = false;
+              Object.values(CURRENT_DEALERS_MAP).forEach(dealer => {
+                ['fib', 'tv', 'mov', 'p'].forEach(product => {
+                  ['m1', 'm2', 'm3', 'ly'].forEach(period => {
+                    if (dealer[product]?.[period] === 0) {
+                      dealer[product][period] = null;
+                      needsReload = true;
+                    }
+                  });
+                });
+              });
+              if (needsReload) window.showToast('Recarga tu Excel para validar los ceros del histórico antiguo.');
+            }
+            updateStatusUI(Object.keys(CURRENT_DEALERS_MAP).length, meta.lastUpdated || '--', meta.fileName || 'Excel cargado', meta);
+            applyStateUI(true);
+            return;
+          }
+        } catch(e) {
+          console.error("Error parseando DB de localStorage", e);
+        }
+      }
+
+      CURRENT_DEALERS_MAP = {};
+      updateStatusUI(0, '', '', {});
+      applyStateUI(false);
+    }
+
+    // Alterna entre la pantalla de bienvenida (sin cartera) y el buscador
+    function applyStateUI(hasData) {
+      const empty = document.getElementById('emptyState');
+      const loaded = document.getElementById('loadedState');
+      if (empty) empty.classList.toggle('hidden', !!hasData);
+      if (loaded) loaded.classList.toggle('hidden', !hasData);
+
+      if (!hasData) {
+        const input = document.getElementById('searchInput');
+        if (input) input.value = '';
+      }
+    }
+
+    function calculatePortfolioTotals(dealers) {
+      const rows = Object.values(dealers);
+      return Object.fromEntries(['fib', 'tv', 'mov', 'p'].map(product => {
+        const values = rows.map(dealer => dealer[product]?.act);
+        // Un total incompleto no debe parecer una cifra completa ni un cero.
+        const valid = values.length > 0 && values.every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+        return [product, valid ? values.reduce((sum, value) => sum + value, 0) : null];
+      }));
+    }
+
+    function updateStatusUI(count, dateStr, fileName, meta) {
+      const totals = calculatePortfolioTotals(CURRENT_DEALERS_MAP);
+      for (const [product, id] of [['fib', 'totalFibraAct'], ['tv', 'totalTvAct'], ['mov', 'totalPospagoAct'], ['p', 'totalPrepagoAct']]) {
+        const element = document.getElementById(id);
+        if (element) element.textContent = formatMetric(totals[product]);
+      }
+      renderGoals(totals);
+      const countEl = document.getElementById('dbDealersCount');
+      const dateEl = document.getElementById('dbLastUpdated');
+      const badge = document.getElementById('syncStatusBadge');
+      const label = document.getElementById('dbDealersLabel');
+      meta = meta || {};
+
+      if (!count) {
+        if (countEl) countEl.textContent = '0';
+        if (label) label.textContent = 'distribuidores en tu cartera';
+        if (dateEl) dateEl.textContent = 'Sin cartera cargada todavía';
+        if (badge) {
+          badge.textContent = 'Vacío';
+          badge.className = 'text-[9px] bg-slate-600 text-slate-200 font-bold px-1.5 py-0.5 rounded uppercase';
+        }
+        return;
+      }
+
+      if (countEl) countEl.textContent = count;
+      if (label) label.textContent = 'distribuidores en tu cartera';
+
+      const who = meta.comercial ? `${meta.comercial} · ` : '';
+      if (dateEl) {
+        dateEl.textContent = `${who}Importado: ${dateStr}${fileName ? ' (' + fileName + ')' : ''}`;
+      }
+      if (badge) {
+        badge.textContent = 'Excel Activo';
+        badge.className = 'text-[9px] bg-emerald-600 text-white font-bold px-1.5 py-0.5 rounded uppercase';
+      }
+    }
+
+    // --- OBJETIVOS: únicamente valores personales actuales, sin calendario ---
+    function normalizeGoals(values, strict = false) {
+      const source = values && typeof values === 'object' && !Array.isArray(values) ? values : {};
+      return Object.fromEntries(GOAL_PRODUCTS.map(({ key, label }) => {
+        const raw = source[key];
+        const text = raw == null ? '' : String(raw).trim();
+        if (!text) return [key, null];
+        const value = Number(text);
+        if (!/^[0-9]+$/.test(text) || !Number.isSafeInteger(value) || value <= 0) {
+          if (strict) {
+            const error = new Error(`${label}: introduce un número entero mayor que cero o deja el campo vacío.`);
+            error.product = key;
+            throw error;
+          }
+          return [key, null];
+        }
+        return [key, value];
+      }));
+    }
+
+    function loadGoals() {
+      try { SALES_GOALS = normalizeGoals(JSON.parse(localStorage.getItem(STORAGE_KEY_GOALS) || '{}')); }
+      catch (error) { SALES_GOALS = normalizeGoals({}); }
+    }
+
+    function calculateGoalProgress(actual, target) {
+      if (!Number.isSafeInteger(target) || target <= 0 || typeof actual !== 'number' || !Number.isFinite(actual) || actual < 0) return null;
+      const percentage = actual * 100 / target;
+      if (!Number.isFinite(percentage)) return null;
+      return { percentage, displayed: Math.floor(percentage), level: percentage >= 85 ? 'high' : percentage >= 60 ? 'medium' : 'low' };
+    }
+
+    function renderGoals(totals = calculatePortfolioTotals(CURRENT_DEALERS_MAP)) {
+      const hasGoals = Object.values(SALES_GOALS).some(value => value !== null);
+      const button = document.getElementById('editGoalsBtn');
+      if (button) button.textContent = hasGoals ? 'Editar objetivos' : 'Añadir objetivos';
+      for (const { key, label, output } of GOAL_PRODUCTS) {
+        const element = document.getElementById(output);
+        if (!element) continue;
+        const target = SALES_GOALS[key];
+        const result = calculateGoalProgress(totals[key], target);
+        element.textContent = target == null ? '' : result ? `${result.displayed.toLocaleString('es-ES')} %` : 's/d';
+        element.dataset.level = result ? result.level : '';
+        element.dataset.wide = result && result.displayed >= 1000 ? 'true' : 'false';
+        element.setAttribute('aria-label', target == null ? `Objetivo de ${label}: sin objetivo` : result ? `Objetivo de ${label}: ${result.displayed.toLocaleString('es-ES')} por ciento` : `Objetivo de ${label}: ventas actuales sin datos`);
+      }
+    }
+
+    function showGoalsError(message) {
+      const error = document.getElementById('goalsError');
+      error.textContent = message;
+      error.classList.toggle('hidden', !message);
+    }
+
+    window.openGoals = function() {
+      goalsReturnFocus = document.activeElement;
+      const hasGoals = Object.values(SALES_GOALS).some(value => value !== null);
+      document.getElementById('goalsTitle').textContent = hasGoals ? 'Editar objetivos' : 'Añadir objetivos';
+      showGoalsError('');
+      for (const { key, input } of GOAL_PRODUCTS) {
+        const field = document.getElementById(input);
+        field.value = SALES_GOALS[key] ?? '';
+        field.removeAttribute('aria-invalid');
+      }
+      document.getElementById('resetGoalsBtn').disabled = !hasGoals;
+      document.getElementById('goalsModal').classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+      document.getElementById('goalsPanel').focus();
+    };
+
+    window.closeGoals = function() {
+      document.getElementById('goalsModal').classList.add('hidden');
+      document.body.style.overflow = '';
+      goalsReturnFocus?.focus();
+    };
+
+    window.saveGoals = function(event) {
+      event.preventDefault();
+      showGoalsError('');
+      const values = {};
+      for (const { key, input } of GOAL_PRODUCTS) {
+        const field = document.getElementById(input);
+        field.removeAttribute('aria-invalid');
+        values[key] = field.value;
+      }
+      try {
+        const goals = normalizeGoals(values, true);
+        localStorage.setItem(STORAGE_KEY_GOALS, JSON.stringify(goals));
+        SALES_GOALS = goals;
+        renderGoals();
+        window.closeGoals();
+        window.showToast('Objetivos guardados');
+      } catch (error) {
+        showGoalsError(error.product ? error.message : 'No se pudieron guardar los objetivos. Comprueba el espacio disponible y vuelve a intentarlo.');
+        if (error.product) {
+          const field = document.getElementById(GOAL_PRODUCTS.find(product => product.key === error.product).input);
+          field.setAttribute('aria-invalid', 'true');
+          field.focus();
+        }
+      }
+    };
+
+    window.resetGoals = function() {
+      if (!window.confirm('¿Borrar los objetivos de los cuatro productos? La cartera y las ventas no se modificarán.')) return;
+      try {
+        localStorage.removeItem(STORAGE_KEY_GOALS);
+        SALES_GOALS = normalizeGoals({});
+        renderGoals();
+        window.closeGoals();
+        window.showToast('Objetivos borrados');
+      } catch (error) { showGoalsError('No se pudieron borrar los objetivos. Vuelve a intentarlo.'); }
+    };
+
+    // --- ALIAS / RÓTULO COMERCIAL HELPERS ---
+    function getDealerAlias(id) {
+      if (!DEALER_ALIASES.has(id)) DEALER_ALIASES.set(id, localStorage.getItem(ALIAS_KEY_PREFIX + id) || '');
+      return DEALER_ALIASES.get(id);
+    }
+
+    function renderAliasUI(id) {
+      const alias = getDealerAlias(id);
+      const badge = document.getElementById('dAliasBadge');
+      const text = document.getElementById('dAliasText');
+
+      if (alias) {
+        text.textContent = alias;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+
+    // --- FORMATEADOR FECHA FIRMA (Columna G de Excel) ---
+    function parseExcelDateSerial(val) {
+      if (!val) return { label: "", isNew: false };
+      const num = parseInt(String(val).trim(), 10);
+      if (!isNaN(num) && num >= 30000 && num <= 65000) {
+        const utcDays = num - 25569;
+        const dateObj = new Date(utcDays * 86400 * 1000);
+        const m = MONTHS_ES[dateObj.getUTCMonth()] || "";
+        const y = dateObj.getUTCFullYear();
+        const nowSerial = Math.floor(Date.now() / 86400000) + 25569;
+        // "Alta reciente" = firmado en los últimos 95 días (se tolera hasta 1 mes en el futuro
+        // por desfases de zona horaria o fechas precargadas). Sin números mágicos que caduquen.
+        const daysAgo = nowSerial - num;
+        const isNew = daysAgo >= -31 && daysAgo <= 95;
+        return { label: `${m} ${y}`, isNew: isNew };
+      }
+      return { label: String(val).trim(), isNew: false };
+    }
+
+    // --- FILE UPLOAD (SHEETJS) ---
+    window.triggerUpload = function() {
+      document.getElementById('excelFileInput').click();
+    };
+
+    window.handleFileUpload = async function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (typeof XLSX === 'undefined') {
+        window.showToast('No se ha cargado el lector de Excel. Reabre la app o comprueba la carpeta assets.');
+        e.target.value = '';
+        return;
+      }
+
+      window.showToast("Leyendo archivo Excel...");
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const matrix = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: "" });
+
+        if (!matrix || matrix.length < 2) {
+          throw new Error("La hoja de cálculo está vacía");
+        }
+
+        const result = parseExcelMatrix(matrix);
+        const parsedMap = result.dealers;
+        const count = Object.keys(parsedMap).length;
+
+        if (count === 0) {
+          throw new Error("No se encontraron registros de distribuidores válidos.");
+        }
+
+        const now = new Date();
+        const dateStr = `${now.getDate()}/${now.getMonth() + 1} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+        // Salvaguarda: si en este dispositivo ya hay la cartera de otro comercial, avisar
+        let prevMeta = {};
+        try { prevMeta = JSON.parse(localStorage.getItem(STORAGE_KEY_META) || '{}') || {}; } catch(e) {}
+        const prevCom = String(prevMeta.comercial || '').trim();
+        const newCom = String(result.comercial || '').trim();
+        if (prevCom && newCom && prevCom.toLowerCase() !== newCom.toLowerCase()) {
+          const cambiar = window.confirm(
+            `En este dispositivo hay cargada la cartera de ${prevCom}.\n\n` +
+            `El Excel que has elegido es de ${newCom} y la sustituirá.\n\n¿Continuar?`
+          );
+          if (!cambiar) { e.target.value = ''; return; }
+        }
+
+        const meta = {
+          lastUpdated: dateStr,
+          fileName: file.name,
+          count: count,
+          comercial: result.comercial,
+          coordinador: result.coordinador,
+          comerciales: result.comerciales
+        };
+
+        meta.projectionSchema = 2;
+        meta.historySchema = 1;
+        // Guardamos primero en disco: si falla la cuota, no dejamos la app a medias
+        localStorage.setItem(STORAGE_KEY_DB, JSON.stringify(parsedMap));
+        localStorage.setItem(STORAGE_KEY_META, JSON.stringify(meta));
+
+        CURRENT_DEALERS_MAP = parsedMap;
+        updateStatusUI(count, dateStr, file.name, meta);
+        applyStateUI(true);
+
+        // Si la ficha abierta ya no existe en el nuevo Excel, volvemos al buscador
+        if (activeDealer && !CURRENT_DEALERS_MAP[activeDealer.id]) {
+          window.resetSearch();
+        } else if (activeDealer) {
+          renderDealerCard(CURRENT_DEALERS_MAP[activeDealer.id]);
+        }
+
+        window.showToast(`✅ ${count} distribuidores cargados`);
+
+        if (result.comerciales.length > 1) {
+          setTimeout(() => {
+            window.showToast(`⚠️ Este Excel incluye ${result.comerciales.length} comerciales. Se han cargado todos.`);
+          }, 2600);
+        }
+
+        e.target.value = '';
+      } catch (err) {
+        console.error(err);
+        const quota = err && (err.name === 'QuotaExceededError' || /quota/i.test(err.message || ''));
+        window.showToast(quota
+          ? "❌ El Excel es demasiado grande para el móvil. Divídelo por comercial."
+          : `❌ Error: ${err.message || 'No se pudo leer el Excel'}`);
+        e.target.value = '';
+      }
+    };
+
+    // Lectura por encabezados; los índices documentan la estructura del CDM.
+    function parseExcelMatrix(matrix) {
+      const out = {};
+      const comercialesSet = new Set();
+      let coordinador = '';
+      const rawHeaders = matrix[0].map(h => String(h || '').trim());
+      const cleanHeaders = rawHeaders.map(h =>
+        h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, ' ').replace(/\s+\d{4}$/, '')
+      );
+
+      const getColIdx = (exactNames) => {
+        const exactIdx = cleanHeaders.findIndex(ch => exactNames.includes(ch));
+        if (exactIdx !== -1) return exactIdx;
+
+        // No adivinar por posición: una columna ausente no debe leer la contigua.
+        return -1;
+      };
+
+      const idxId       = getColIdx(['id', 'id distribuidor'], 2);
+      const idxCoordinador = getColIdx(['coordinador'], 0);
+      const idxComercial   = getColIdx(['comercial db5', 'comercial'], 1);
+      const idxName     = getColIdx(['nombre distribuidor', 'distribuidor'], 3);
+      const idxCp       = getColIdx(['codigo postal', 'cp'], 4);
+      const idxAccFib   = getColIdx(['acceso a fibra', 'acceso fibra'], 5);
+      const idxFechaF   = getColIdx(['fecha firma', 'alta'], 6);
+      const idxMun      = getColIdx(['municipio'], 8);
+      const idxSubzona  = getColIdx(['nombre subzona', 'subzona'], 10);
+      const idxCatFib   = getColIdx(['categoria fibra 2026', 'categoria fibra'], 11);
+      const idxCatPrep  = getColIdx(['categoria prepago 2026', 'categoria prepago'], 12);
+      const idxHuella   = getColIdx(['tipo huella.1', 'tipo huella', 'huella'], 13);
+
+      // COLUMNA O (índice 14) = Fibra actual del mes corriente
+      const idxFibAct   = getColIdx(['fibra'], 14, ['new', 'acceso', 'categoria', 'proy', 'ly', 'm-']);
+      const idxFibProy  = getColIdx(['proy fibra'], 16);
+      const idxFibLy    = getColIdx(['fibra.ly', 'fibra ly'], 17);
+      const idxFibM3    = getColIdx(['fibra m-3'], 18);
+      const idxFibM2    = getColIdx(['fibra m-2'], 19);
+      const idxFibM1    = getColIdx(['fibra m-1'], 20);
+
+      // COLUMNA V (índice 21) = Móvil pospago actual
+      const idxMovAct   = getColIdx(['movil', 'pospago'], 21, ['new', 'proy', 'ly', 'm-']);
+      const idxMovProy  = getColIdx(['proy pospago', 'proy movil'], 23);
+      const idxMovLy    = getColIdx(['posp.ly', 'posp ly', 'movil ly'], 24);
+      const idxMovM3    = getColIdx(['posp m-3', 'movil m-3'], 25);
+      const idxMovM2    = getColIdx(['posp m-2', 'movil m-2'], 26);
+      const idxMovM1    = getColIdx(['posp m-1', 'movil m-1'], 27);
+
+      // COLUMNA AC (índice 28) = Prepago actual
+      const idxPrepAct  = getColIdx(['prepago'], 28, ['new', 'categoria', 'proy', 'ly', 'm-']);
+      const idxPrepProy = getColIdx(['proy prepago'], 29);
+      const idxPrepLy   = getColIdx(['prep ly', 'prep.ly'], 30);
+      const idxPrepM3   = getColIdx(['prep m-3'], 31);
+      const idxPrepM2   = getColIdx(['prep m-2'], 32);
+      const idxPrepM1   = getColIdx(['prep m-1'], 33);
+
+      // COLUMNA AI (índice 34) = TV actual
+      const idxTvAct    = getColIdx(['digi tv', 'tv'], 34, ['new', 'proy', 'ly', 'm-']);
+      const idxTvProy   = getColIdx(['proy tv'], 36);
+      const idxTvM3     = getColIdx(['digi tv m-3', 'tv m-3'], 37);
+      const idxTvM2     = getColIdx(['digi tv m-2', 'tv m-2'], 38);
+      const idxTvM1     = getColIdx(['digi tv m-1', 'tv m-1'], 39);
+
+      const required = [
+        ['ID', idxId], ['Nombre distribuidor', idxName], ['Comercial', idxComercial],
+        ['Fibra', idxFibAct], ['Proy Fibra', idxFibProy], ['Fibra M-1', idxFibM1], ['Fibra LY', idxFibLy],
+        ['Móvil', idxMovAct], ['Proy Pospago', idxMovProy], ['Posp M-1', idxMovM1], ['Posp LY', idxMovLy],
+        ['Prepago', idxPrepAct], ['Proy Prepago', idxPrepProy], ['Prep M-1', idxPrepM1], ['Prep LY', idxPrepLy]
+      ];
+      const missing = required.filter(([, idx]) => idx === -1).map(([name]) => name);
+      if (missing.length) throw new Error('Faltan columnas necesarias: ' + missing.join(', '));
+
+      const getInt = (row, idx) => {
+        if (idx === -1 || idx === undefined || row[idx] == null || String(row[idx]).trim() === '') return null;
+        const n = Number(String(row[idx]).trim().replace(',', '.'));
+        return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+      };
+
+      const getDec = (row, idx) => {
+        if (idx === -1 || idx === undefined || row[idx] == null || String(row[idx]).trim() === '') return null;
+        const n = Number(String(row[idx]).trim().replace(',', '.'));
+        return Number.isFinite(n) && n >= 0 ? n : null;
+      };
+
+      for (let i = 1; i < matrix.length; i++) {
+        const row = matrix[i];
+        if (!row || row.length === 0) continue;
+
+        const rawId = idxId !== -1 ? String(row[idxId] || '').trim() : '';
+        if (!rawId || isNaN(Number(rawId))) continue;
+        if (Object.prototype.hasOwnProperty.call(out, rawId)) {
+          throw new Error(`ID duplicado ${rawId} en la fila ${i + 1}. Revisa el Excel.`);
+        }
+
+        // Metadatos del Excel: quién es el comercial dueño de esta cartera
+        const comercialRow = idxComercial !== -1 && row[idxComercial] ? String(row[idxComercial]).trim() : '';
+        if (comercialRow) comercialesSet.add(comercialRow);
+        if (!coordinador && idxCoordinador !== -1 && row[idxCoordinador]) {
+          coordinador = String(row[idxCoordinador]).trim();
+        }
+
+        const rawAcc = idxAccFib !== -1 ? String(row[idxAccFib] || '').toLowerCase().trim() : 'no';
+        const hasFibra = rawAcc.startsWith('y') || rawAcc.startsWith('s') || rawAcc === '1';
+
+        const ffParsed = idxFechaF !== -1 ? parseExcelDateSerial(row[idxFechaF]) : { label: "", isNew: false };
+
+        out[rawId] = {
+          id: rawId,
+          n: idxName !== -1 && row[idxName] ? String(row[idxName]).trim() : `Dealer ${rawId}`,
+          cp: idxCp !== -1 && String(row[idxCp] ?? '').trim() ? String(row[idxCp]).trim().padStart(5, '0') : 's/d',
+          z: idxSubzona !== -1 && String(row[idxSubzona] ?? '').trim() ? String(row[idxSubzona]).trim() : 's/d',
+          m: idxMun !== -1 && String(row[idxMun] ?? '').trim() ? String(row[idxMun]).trim() : 's/d',
+          h: idxHuella !== -1 && String(row[idxHuella] ?? '').trim() ? String(row[idxHuella]).trim() : 's/d',
+          f_acc: hasFibra,
+          ff: ffParsed.label,
+          ff_new: ffParsed.isNew,
+          cat_p: idxCatPrep !== -1 && row[idxCatPrep] ? String(row[idxCatPrep]).trim() : 'Beginner',
+          cat_f: idxCatFib !== -1 && row[idxCatFib] ? String(row[idxCatFib]).trim() : 'Beginner',
+          p: {
+            m3: getInt(row, idxPrepM3),
+            m2: getInt(row, idxPrepM2),
+            m1: getInt(row, idxPrepM1),
+            act: getInt(row, idxPrepAct),
+            proy: getDec(row, idxPrepProy),
+            ly: getInt(row, idxPrepLy)
+          },
+          mov: {
+            m3: getInt(row, idxMovM3),
+            m2: getInt(row, idxMovM2),
+            m1: getInt(row, idxMovM1),
+            act: getInt(row, idxMovAct),
+            proy: getDec(row, idxMovProy),
+            ly: getInt(row, idxMovLy)
+          },
+          fib: {
+            m3: getInt(row, idxFibM3),
+            m2: getInt(row, idxFibM2),
+            m1: getInt(row, idxFibM1),
+            act: getInt(row, idxFibAct),
+            proy: getDec(row, idxFibProy),
+            ly: getInt(row, idxFibLy)
+          },
+          tv: {
+            m3: getInt(row, idxTvM3),
+            m2: getInt(row, idxTvM2),
+            m1: getInt(row, idxTvM1),
+            act: getInt(row, idxTvAct),
+            proy: getDec(row, idxTvProy)
+          }
+        };
+      }
+
+      return {
+        dealers: out,
+        comercial: comercialesSet.size === 1 ? Array.from(comercialesSet)[0] : '',
+        coordinador: coordinador,
+        comerciales: Array.from(comercialesSet).sort()
+      };
+    }
+
+    // --- BÚSQUEDA ---
+    // Escapa texto antes de inyectarlo en HTML (nombres, zonas, rótulos vienen del Excel)
+    function escapeHtml(v) {
+      return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function hideSearchError() {
+      const errBox = document.getElementById('searchError');
+      if (errBox) errBox.classList.add('hidden');
+    }
+
+    function showSearchError(msg) {
+      const errBox = document.getElementById('searchError');
+      const errMsg = document.getElementById('searchErrorMsg');
+      if (errMsg) errMsg.textContent = msg;
+      if (errBox) errBox.classList.remove('hidden');
+    }
+
+    window.doSearch = function(e) {
+      if (e) e.preventDefault();
+      const val = document.getElementById('searchInput').value.trim();
+      if (!val) return;
+      window.selectDealer(val);
+    };
+
+    window.handleLiveSearch = function(val) {
+      const clean = String(val || '').trim();
+      const cleanLow = clean.toLowerCase();
+      const clearBtn = document.getElementById('clearSearchBtn');
+      const dropdown = document.getElementById('autocompleteList');
+
+      if (clearBtn) clearBtn.classList.toggle('hidden', clean.length === 0);
+      hideSearchError();
+
+      if (clean.length < 2) {
+        if (dropdown) { dropdown.innerHTML = ''; dropdown.classList.add('hidden'); }
+        return;
+      }
+
+      const keys = Object.keys(CURRENT_DEALERS_MAP);
+      const matches = keys.filter(k => {
+        const d = CURRENT_DEALERS_MAP[k];
+        const alias = getDealerAlias(d.id).toLowerCase();
+        return k.indexOf(clean) !== -1
+          || String(d.n || '').toLowerCase().indexOf(cleanLow) !== -1
+          || String(d.cp || '').indexOf(clean) !== -1
+          || (alias && alias.indexOf(cleanLow) !== -1);
+      }).slice(0, 8);
+
+      if (!dropdown) return;
+
+      if (matches.length === 0) {
+        dropdown.innerHTML = '';
+        dropdown.classList.add('hidden');
+        return;
+      }
+
+      dropdown.innerHTML = matches.map(k => {
+        const d = CURRENT_DEALERS_MAP[k];
+        const alias = getDealerAlias(d.id);
+        const aliasHtml = alias
+          ? `<div class="text-[11px] font-bold text-brand-blue mt-0.5">🏪 ${escapeHtml(alias)}</div>`
+          : '';
+        return `
+          <div
+            data-dealer-id="${escapeHtml(d.id)}"
+            role="button" tabindex="0" aria-label="Ver ${escapeHtml(d.n)}"
+            class="p-3 hover:bg-slate-50 active:bg-blue-50 cursor-pointer flex items-center justify-between transition text-left"
+          >
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-mono font-bold text-xs bg-brand-navy text-brand-yellow px-1.5 py-0.5 rounded">${escapeHtml(d.id)}</span>
+                <span class="text-xs font-bold text-slate-900">${escapeHtml(d.n)}</span>
+              </div>
+              ${aliasHtml}
+              <div class="text-[11px] text-slate-500 mt-0.5">${escapeHtml(d.cp)} · ${escapeHtml(d.z)} (${escapeHtml(d.m)})</div>
+            </div>
+            <span class="text-xs font-bold text-brand-blue">Ver →</span>
+          </div>`;
+      }).join('');
+      dropdown.classList.remove('hidden');
+    };
+
+    window.clearSearchField = function() {
+      const input = document.getElementById('searchInput');
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
+      const clearBtn = document.getElementById('clearSearchBtn');
+      const dropdown = document.getElementById('autocompleteList');
+      if (clearBtn) clearBtn.classList.add('hidden');
+      if (dropdown) dropdown.classList.add('hidden');
+      hideSearchError();
+    };
+
+    // Abre una ficha solo cuando la coincidencia es inequívoca.
+    // Antes, un ID parcial podía abrir el distribuidor equivocado en silencio.
+    window.selectDealer = function(idOrQuery) {
+      if (!idOrQuery) return false;
+
+      const q = String(idOrQuery).trim();
+      const qLow = q.toLowerCase();
+      const dropdown = document.getElementById('autocompleteList');
+      if (dropdown) dropdown.classList.add('hidden');
+      hideSearchError();
+
+      const keys = Object.keys(CURRENT_DEALERS_MAP);
+      if (keys.length === 0) {
+        applyStateUI(false);
+        return false;
+      }
+
+      // 1) ID exacto
+      if (CURRENT_DEALERS_MAP[q]) {
+        renderDealerCard(CURRENT_DEALERS_MAP[q]);
+        return true;
+      }
+
+      // 2) Nombre, rótulo o código postal
+      const textMatches = keys.filter(k => {
+        const d = CURRENT_DEALERS_MAP[k];
+        const alias = getDealerAlias(d.id).toLowerCase();
+        return String(d.n || '').toLowerCase().indexOf(qLow) !== -1
+          || String(d.cp || '').indexOf(q) !== -1
+          || (alias && alias.indexOf(qLow) !== -1);
+      });
+
+      // 3) ID parcial (solo si es único)
+      const idMatches = keys.filter(k => k.indexOf(q) !== -1);
+      const candidates = textMatches.length > 0 ? textMatches : idMatches;
+
+      if (candidates.length === 1) {
+        renderDealerCard(CURRENT_DEALERS_MAP[candidates[0]]);
+        return true;
+      }
+
+      if (candidates.length > 1) {
+        window.handleLiveSearch(q);
+        showSearchError(`Hay ${candidates.length} distribuidores que coinciden con "${q}". Toca el correcto en la lista.`);
+        return false;
+      }
+
+      showSearchError(`No se encontró el ID o tienda "${q}" en tu cartera. Revisa el código del CRM o actualiza el archivo Excel.`);
+      return false;
+    };
+
+    // --- RENDER DEDICATED DEALER CARD ---
+    function renderDealerCard(d) {
+      activeDealer = d;
+      saveToRecents(d);
+
+      const setTxt = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val !== undefined && val !== null ? (typeof val === 'number' ? formatMetric(val) : val) : 's/d';
+      };
+
+      // Header info
+      setTxt('dIdBadge', `ID: ${d.id}`);
+      setTxt('dName', d.n);
+      setTxt('dLocation', `${d.cp} · ${d.z} (${d.m})`);
+
+      // Alias UI
+      renderAliasUI(d.id);
+
+      // Badges
+      const hBadge = document.getElementById('dHuellaBadge');
+      if (hBadge) {
+        hBadge.textContent = d.h;
+        hBadge.className = d.h === 'Zona Smart'
+          ? "text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide bg-blue-100 text-blue-900 border border-blue-200"
+          : "text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-300";
+      }
+
+      const fBadge = document.getElementById('dFibraBadge');
+      if (fBadge) {
+        if (d.f_acc) {
+          fBadge.textContent = "⚡ Fibra Habilitada";
+          fBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide bg-emerald-100 text-emerald-900 border border-emerald-300";
+        } else {
+          fBadge.textContent = "Sin Acceso Fibra";
+          fBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide bg-slate-100 text-slate-500 border border-slate-200";
+        }
+      }
+
+      setTxt('dCatPrepagoBadge', `Pre: ${d.cat_p || 'Beginner'}`);
+
+      // Antigüedad Badge (Fecha Firma)
+      const antBadge = document.getElementById('dAntiguedadBadge');
+      if (antBadge) {
+        if (d.ff) {
+          if (d.ff_new) {
+            antBadge.textContent = `🆕 Alta: ${d.ff}`;
+            antBadge.className = "text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wide bg-purple-100 text-purple-900 border border-purple-300";
+          } else {
+            antBadge.textContent = `📅 Alta: ${d.ff}`;
+            antBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide bg-slate-100 text-slate-700 border border-slate-200";
+          }
+          antBadge.classList.remove('hidden');
+        } else {
+          antBadge.classList.add('hidden');
+        }
+      }
+
+      // Render Tactical Focus Box
+      renderTacticalFocus(d);
+
+      // 1. Prepago Metrics
+      setTxt('pre_m3', d.p.m3);
+      setTxt('pre_m2', d.p.m2);
+      setTxt('pre_m1', d.p.m1);
+      setTxt('pre_act', d.p.act);
+      setTxt('pre_proy', d.p.proy);
+      setTxt('pre_ly', d.p.ly);
+
+      // 2. Fibra Metrics (Simplificar si no tiene acceso ni histórico)
+      const hasAnyFibraHistory = (d.fib.m3 + d.fib.m2 + d.fib.m1 + d.fib.act + d.fib.ly) > 0 || d.fib.proy > 0;
+      const fibGrid = document.getElementById('fibraGrid');
+      const fibCompact = document.getElementById('fibraCompactBar');
+
+      if (!d.f_acc && !hasAnyFibraHistory) {
+        if (fibGrid) fibGrid.classList.add('hidden');
+        if (fibCompact) fibCompact.classList.remove('hidden');
+      } else {
+        if (fibGrid) fibGrid.classList.remove('hidden');
+        if (fibCompact) fibCompact.classList.add('hidden');
+        setTxt('fib_m3', d.fib.m3);
+        setTxt('fib_m2', d.fib.m2);
+        setTxt('fib_m1', d.fib.m1);
+        setTxt('fib_act', d.fib.act);
+        setTxt('fib_proy', d.fib.proy);
+        setTxt('fib_ly', d.fib.ly);
+      }
+
+      // 3. Móvil Metrics
+      setTxt('mov_m3', d.mov.m3);
+      setTxt('mov_m2', d.mov.m2);
+      setTxt('mov_m1', d.mov.m1);
+      setTxt('mov_act', d.mov.act);
+      setTxt('mov_proy', d.mov.proy);
+      setTxt('mov_ly', d.mov.ly);
+
+      // 4. TV (Ocultar cuando no aplica para evitar ruido visual)
+      const hasAnyTv = [d.tv.m3, d.tv.m2, d.tv.m1, d.tv.act, d.tv.proy].some(value => value > 0);
+      const tvCard = document.getElementById('cardTv');
+      if (tvCard) {
+        if (!d.f_acc && !hasAnyTv) {
+          tvCard.classList.add('hidden');
+        } else {
+          tvCard.classList.remove('hidden');
+          setTxt('tv_m3', d.tv.m3);
+          setTxt('tv_m2', d.tv.m2);
+          setTxt('tv_m1', d.tv.m1);
+          setTxt('tv_act', d.tv.act);
+          setTxt('tv_proy', d.tv.proy);
+          setTxt('tv_ly', d.tv.ly);
+        }
+      }
+
+
+      // Toggle views
+      document.getElementById('homeView').classList.add('hidden');
+      document.getElementById('dealerView').classList.remove('hidden');
+      const heading = document.getElementById('dName');
+      heading.setAttribute('tabindex', '-1');
+      heading.focus({ preventScroll: true });
+      window.scrollTo(0, 0);
+    }
+
+    // Criterios simétricos internos; el resumen no muestra porcentajes.
+    const TREND_RULES = { similarRatio: 0.10, strongRatio: 0.30,
+      minChange: { fib: 1, tv: 1, mov: 1, p: 2 },
+      minStrongChange: { fib: 2, tv: 2, mov: 2, p: 3 } };
+    function formatMetric(value) {
+      return typeof value === 'number' && Number.isFinite(value)
+        ? value.toLocaleString('es-ES', { maximumFractionDigits: 1 }) : 's/d';
+    }
+
+    function evaluateProjection(proy, baseline, product) {
+      if (typeof proy !== 'number' || !Number.isFinite(proy) || proy < 0) return { state: 'missing' };
+      if (typeof baseline !== 'number' || !Number.isFinite(baseline) || baseline < 0) return { state: 'noBaseline' };
+      const diff = proy - baseline;
+      if (baseline === 0) return { state: proy > 0 ? 'new' : 'stable' };
+      const magnitude = Math.abs(diff);
+      // Tolerancia para límites como 30 % al operar con medias decimales.
+      const tolerance = 1e-9;
+      if (magnitude <= baseline * TREND_RULES.similarRatio + tolerance ||
+          magnitude + tolerance < (TREND_RULES.minChange[product] || 1)) return { state: 'stable' };
+      const strong = magnitude + tolerance >= baseline * TREND_RULES.strongRatio &&
+        magnitude + tolerance >= (TREND_RULES.minStrongChange[product] || 2);
+      return { state: diff > 0 ? (strong ? 'strongGrowth' : 'slightGrowth') : (strong ? 'strongFall' : 'slightFall') };
+    }
+
+    function historicalAverage(metrics) {
+      const months = [metrics?.m1, metrics?.m2, metrics?.m3];
+      return months.every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+        ? months.reduce((sum, value) => sum + value, 0) / 3 : null;
+    }
+
+    function salesComparisonText(proy, baseline, product, yearly = false) {
+      if (yearly && (typeof baseline !== 'number' || !Number.isFinite(baseline) || baseline < 0)) return 'Sin datos';
+      const state = evaluateProjection(proy, baseline, product).state;
+      if (state === 'new') {
+        return proy >= (TREND_RULES.minStrongChange[product] || 2)
+          ? 'Las ventas previstas mejoran claramente'
+          : 'Las ventas previstas mejoran ligeramente';
+      }
+      const labels = {
+        missing: 'Sin proyección disponible',
+        noBaseline: yearly ? 'Sin datos' : 'Histórico insuficiente',
+        stable: 'Ventas previstas similares',
+        slightFall: 'Ventas previstas ligeramente por debajo',
+        strongFall: 'Ventas previstas claramente por debajo',
+        slightGrowth: 'Ventas previstas ligeramente por encima',
+        strongGrowth: 'Ventas previstas claramente por encima'
+      };
+      return labels[state];
+    }
+
+    // Un único resumen: dos comparativas independientes para cada producto.
+    function renderTacticalFocus(d) {
+      const box = document.getElementById('dTacticalAlert');
+      const title = document.getElementById('dTacticalTitle');
+      const list = document.getElementById('dTacticalList');
+      if (!box || !title || !list) return;
+
+      const products = [['fib', 'Fibra Smart'], ['tv', 'TV'], ['mov', 'Pospago'], ['p', 'Prepago']];
+      title.textContent = 'Resumen de ventas';
+      list.innerHTML = products.map(([key, label]) => {
+        const metrics = d[key] || {};
+        const recent = salesComparisonText(metrics.proy, historicalAverage(metrics), key);
+        const yearly = salesComparisonText(metrics.proy, metrics.ly, key, true);
+        return `<li><strong>${label}</strong><p><span class="comparison-label">Últimos 3 meses:</span> ${recent}.</p><p><span class="comparison-label">${yearly === 'Sin datos' ? 'Año anterior-' : 'Año anterior:'}</span> ${yearly}${yearly === 'Sin datos' ? '' : '.'}</p></li>`;
+      }).join('');
+    }
+
+    // --- RECENT SEARCHES MANAGER ---
+    function saveToRecents(d) {
+      let recents = getRecents();
+      recents = recents.filter(r => r.id !== d.id);
+      recents.unshift({ id: d.id, n: d.n, cp: d.cp, z: d.z });
+      recents = recents.slice(0, 4);
+      localStorage.setItem(STORAGE_KEY_RECENTS, JSON.stringify(recents));
+      renderRecents();
+    }
+
+    function getRecents() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY_RECENTS);
+        return stored ? JSON.parse(stored) : [];
+      } catch(e) {
+        return [];
+      }
+    }
+
+    function renderRecents() {
+      const recents = getRecents();
+      const list = document.getElementById('recentsList');
+      const sec = document.getElementById('recentsSection');
+      if (!list || !sec) return;
+
+      if (recents.length === 0) {
+        sec.classList.add('hidden');
+        return;
+      }
+
+      sec.classList.remove('hidden');
+      list.innerHTML = recents.map(r => {
+        const alias = getDealerAlias(r.id);
+        const aliasHtml = alias ? ` · <span class="text-brand-blue">${escapeHtml(alias)}</span>` : '';
+        return `
+          <div
+            data-dealer-id="${escapeHtml(r.id)}"
+            role="button" tabindex="0" aria-label="Ver ${escapeHtml(r.n)}"
+            class="bg-white hover:bg-slate-50 active:bg-blue-50 border border-slate-200 rounded-xl p-2.5 flex items-center justify-between cursor-pointer transition shadow-2xs"
+          >
+            <div class="flex items-center gap-2 truncate pr-2">
+              <span class="font-mono font-bold text-xs bg-brand-navy text-brand-yellow px-2 py-0.5 rounded">${escapeHtml(r.id)}</span>
+              <span class="text-xs font-bold text-slate-800 truncate">${escapeHtml(r.n)}${aliasHtml}</span>
+            </div>
+            <span class="text-[11px] text-slate-400 font-medium shrink-0">${escapeHtml(r.cp)}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    window.clearRecents = function() {
+      localStorage.removeItem(STORAGE_KEY_RECENTS);
+      renderRecents();
+      window.showToast("Historial borrado");
+    };
+
+    // --- COPIA DE SEGURIDAD: EXPORTAR / IMPORTAR / BORRAR TODO ---
+    const BACKUP_VERSION = 1;
+    const pad2 = n => String(n).padStart(2, '0');
+
+    function readAllPrefixed(prefix) {
+      const out = {};
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.indexOf(prefix) === 0) {
+            const v = localStorage.getItem(k);
+            if (v) out[k.slice(prefix.length)] = v;
+          }
+        }
+      } catch(e) {}
+      return out;
+    }
+
+    function clearAllPrefixed(prefix) {
+      try {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.indexOf(prefix) === 0) keys.push(k);
+        }
+        keys.forEach(k => localStorage.removeItem(k));
+      } catch(e) {}
+    }
+
+    window.openSettings = function() {
+      const m = document.getElementById('settingsModal');
+      if (m) {
+        settingsReturnFocus = document.activeElement;
+        m.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        document.getElementById('settingsPanel').focus();
+      }
+    };
+
+    window.closeSettings = function() {
+      const m = document.getElementById('settingsModal');
+      if (m) m.classList.add('hidden');
+      document.body.style.overflow = '';
+      settingsReturnFocus?.focus();
+    };
+
+    window.exportBackup = function() {
+      try {
+        let meta = {};
+        try { meta = JSON.parse(localStorage.getItem(STORAGE_KEY_META) || '{}') || {}; } catch(e) {}
+        const payload = {
+          app: 'Cartera GPV',
+          backupVersion: BACKUP_VERSION,
+          exportedAt: new Date().toISOString(),
+          db: CURRENT_DEALERS_MAP || {},
+          meta: meta,
+          notes: readAllPrefixed(NOTES_KEY_PREFIX),
+          aliases: readAllPrefixed(ALIAS_KEY_PREFIX),
+          goals: SALES_GOALS,
+          recents: getRecents()
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const d = new Date();
+        const stamp = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cartera_gpv_backup_${stamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        window.closeSettings();
+        window.showToast('💾 Copia de seguridad descargada');
+      } catch (err) {
+        console.error(err);
+        window.showToast('❌ No se pudo crear la copia');
+      }
+    };
+
+    window.triggerImportBackup = function() {
+      const input = document.getElementById('backupFileInput');
+      if (input) input.click();
+    };
+
+    window.handleImportBackup = async function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data || typeof data !== 'object') throw new Error('Archivo no válido');
+
+        const db = data.db && typeof data.db === 'object' ? data.db : {};
+        const notes = data.notes && typeof data.notes === 'object' ? data.notes : {};
+        const aliases = data.aliases && typeof data.aliases === 'object' ? data.aliases : {};
+        // Campo opcional: las copias antiguas conservan los objetivos actuales.
+        if (data.goals !== undefined && (!data.goals || typeof data.goals !== 'object' || Array.isArray(data.goals))) throw new Error('Los objetivos de la copia no son válidos');
+        const goals = data.goals === undefined ? null : normalizeGoals(data.goals, true);
+        const nDb = Object.keys(db).length;
+        const nNotes = Object.keys(notes).length;
+        const nAlias = Object.keys(aliases).length;
+        const nGoals = goals ? Object.values(goals).filter(value => value !== null).length : 0;
+
+        if (nDb === 0 && nNotes === 0 && nAlias === 0 && nGoals === 0) {
+          throw new Error('La copia no contiene datos');
+        }
+
+        const resumen = [
+          nDb ? `${nDb} distribuidores` : null,
+          nNotes ? `${nNotes} notas` : null,
+          nAlias ? `${nAlias} rótulos` : null,
+          goals ? `${nGoals} objetivos (sustituyen los actuales)` : null
+        ].filter(Boolean).join(', ');
+
+        const ok = window.confirm(
+          `Restaurar copia de seguridad:\n\n${resumen}\n\nSe sustituirán los datos actuales de este dispositivo. ¿Continuar?`
+        );
+        if (!ok) { e.target.value = ''; return; }
+
+        if (goals) localStorage.setItem(STORAGE_KEY_GOALS, JSON.stringify(goals));
+        if (nDb > 0) {
+          localStorage.setItem(STORAGE_KEY_DB, JSON.stringify(db));
+          localStorage.setItem(STORAGE_KEY_META, JSON.stringify(data.meta || {}));
+        }
+        if (data.notes !== undefined) {
+          clearAllPrefixed(NOTES_KEY_PREFIX);
+          Object.keys(notes).forEach(id => {
+            if (notes[id]) localStorage.setItem(NOTES_KEY_PREFIX + id, String(notes[id]));
+          });
+        }
+        if (data.aliases !== undefined) {
+          clearAllPrefixed(ALIAS_KEY_PREFIX);
+          Object.keys(aliases).forEach(id => {
+            if (aliases[id]) localStorage.setItem(ALIAS_KEY_PREFIX + id, String(aliases[id]));
+          });
+        }
+        if (Array.isArray(data.recents)) {
+          localStorage.setItem(STORAGE_KEY_RECENTS, JSON.stringify(data.recents));
+        }
+
+        activeDealer = null;
+        document.getElementById('dealerView').classList.add('hidden');
+        document.getElementById('homeView').classList.remove('hidden');
+        loadDatabase();
+        renderRecents();
+        window.closeSettings();
+        window.showToast('✅ Copia restaurada');
+        e.target.value = '';
+      } catch (err) {
+        console.error(err);
+        window.showToast(`❌ ${err.message || 'No se pudo leer la copia'}`);
+        e.target.value = '';
+      }
+    };
+
+    window.wipeAllData = function() {
+      const ok = window.confirm(
+        '¿Borrar TODOS los datos de este dispositivo?\n\n' +
+        'Se eliminarán la cartera cargada, los objetivos, las notas de visita, los rótulos y el historial.\n\n' +
+        'No se puede deshacer. Exporta antes una copia de seguridad si quieres conservarlos.'
+      );
+      if (!ok) return;
+
+      try {
+        clearAllPrefixed(NOTES_KEY_PREFIX);
+        clearAllPrefixed(ALIAS_KEY_PREFIX);
+        localStorage.removeItem(STORAGE_KEY_DB);
+        localStorage.removeItem(STORAGE_KEY_META);
+        localStorage.removeItem(STORAGE_KEY_RECENTS);
+        localStorage.removeItem(STORAGE_KEY_GOALS);
+
+        CURRENT_DEALERS_MAP = {};
+        DEALER_ALIASES.clear();
+        SALES_GOALS = normalizeGoals({});
+        activeDealer = null;
+        document.getElementById('dealerView').classList.add('hidden');
+        document.getElementById('homeView').classList.remove('hidden');
+        window.clearSearchField();
+        updateStatusUI(0, '', '', {});
+        applyStateUI(false);
+        renderRecents();
+        window.closeSettings();
+        window.showToast('🧹 Datos borrados');
+      } catch (err) {
+        console.error(err);
+        window.showToast('❌ No se pudieron borrar los datos');
+      }
+    };
+
+    // --- WHATSAPP SHARE ---
+    window.copyWhatsAppReport = function() {
+      if (!activeDealer) return;
+      const d = activeDealer;
+      const alias = getDealerAlias(d.id);
+      const aliasLine = alias ? `🏷️ Rótulo: *${alias}*
+` : '';
+
+      const report = 
+`📍 *VISITA GPV*
+🏪 *${d.n}* (ID: ${d.id})
+${aliasLine}📌 ${d.cp} · ${d.z} (${d.m})
+📶 Huella: ${d.h} | Fibra: ${d.f_acc ? 'Habilitada' : 'No'}${d.ff ? ' | Alta: ' + d.ff : ''}
+
+📊 *BALANCE COMERCIAL :*
+• Fibra Smart: Act *${formatMetric(d.fib.act)}* (Proy: ${formatMetric(d.fib.proy)} | M-1: ${formatMetric(d.fib.m1)} | M-2: ${formatMetric(d.fib.m2)} | M-3: ${formatMetric(d.fib.m3)} | LY: ${formatMetric(d.fib.ly)})
+• TV: Act *${formatMetric(d.tv.act)}* (Proy: ${formatMetric(d.tv.proy)} | M-1: ${formatMetric(d.tv.m1)} | M-2: ${formatMetric(d.tv.m2)} | M-3: ${formatMetric(d.tv.m3)} | LY: ${formatMetric(d.tv.ly)})
+• Móvil pospago: Act *${formatMetric(d.mov.act)}* (Proy: ${formatMetric(d.mov.proy)} | M-1: ${formatMetric(d.mov.m1)} | M-2: ${formatMetric(d.mov.m2)} | M-3: ${formatMetric(d.mov.m3)} | LY: ${formatMetric(d.mov.ly)})
+• Prepago: Act *${formatMetric(d.p.act)}* (Proy: ${formatMetric(d.p.proy)} | M-1: ${formatMetric(d.p.m1)} | M-2: ${formatMetric(d.p.m2)} | M-3: ${formatMetric(d.p.m3)} | LY: ${formatMetric(d.p.ly)})
+
+Comparativas mensuales basadas en PROY (estimación del Excel, no cierre real).`;
+
+      const tempArea = document.createElement("textarea");
+      tempArea.value = report;
+      tempArea.style.position = "fixed";
+      tempArea.style.opacity = "0";
+      document.body.appendChild(tempArea);
+      tempArea.focus();
+      tempArea.select();
+
+      try {
+        document.execCommand('copy');
+        window.showToast("¡Reporte copiado para WhatsApp! ✓");
+      } catch(err) {
+        window.showToast("Copia manualmente el texto");
+      }
+      document.body.removeChild(tempArea);
+    };
+
+    // --- NAVIGATION HELPERS ---
+    window.resetSearch = function() {
+      activeDealer = null;
+      document.getElementById('dealerView').classList.add('hidden');
+      document.getElementById('homeView').classList.remove('hidden');
+      window.clearSearchField();
+      window.scrollTo(0, 0);
+    };
+
+    window.showToast = function(msg) {
+      const toast = document.getElementById('toast');
+      const text = document.getElementById('toastMsg');
+      if (!toast || !text) return;
+
+      text.textContent = msg;
+      toast.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-10');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'pointer-events-none', '-translate-y-10');
+      }, 2400);
+    };
+
+    // --- PWA: REGISTRO DEL SERVICE WORKER E INSTALACIÓN ---
+    let deferredInstallPrompt = null;
+    let swRegistration = null;
+    let reloadForUpdate = false;
+    const SW_SUPPORTED = ('serviceWorker' in navigator) && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+
+    function setOfflineStatus(text, state) {
+      const label = document.getElementById('offlineStatus');
+      label.textContent = text;
+      label.dataset.state = state;
+    }
+
+    function updateConnectionStatus() {
+      document.getElementById('connectionStatus').textContent = navigator.onLine
+        ? 'Datos solo en este dispositivo' : 'Sin red · trabajando en local';
+    }
+
+    function checkOfflineStatus() {
+      if (SW_SUPPORTED) navigator.serviceWorker.ready.then(reg => reg.active?.postMessage({ type: 'CHECK_OFFLINE' })).catch(() => {});
+    }
+
+    function stylesMatchVersion() {
+      const expected = document.querySelector('meta[name="app-version"]').content;
+      const actual = getComputedStyle(document.documentElement).getPropertyValue('--gpv-style-version').trim().replace(/["']/g, '');
+      return actual === expected;
+    }
+
+    window.addEventListener('online', () => { updateConnectionStatus(); checkOfflineStatus(); });
+    window.addEventListener('offline', updateConnectionStatus);
+    window.addEventListener('load', () => {
+      updateConnectionStatus();
+      if (!SW_SUPPORTED) setOfflineStatus('Uso offline instalable: abre por HTTPS o localhost', 'error');
+      if (!stylesMatchVersion()) setOfflineStatus('Estilos desactualizados. Reabre con conexión y actualiza la aplicación.', 'error');
+    });
+
+    window.applyAppUpdate = function() {
+      if (!swRegistration?.waiting) return;
+      reloadForUpdate = true;
+      swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    };
+
+    function announceUpdate(reg) {
+      if (!reg.waiting) return;
+      document.getElementById('updateAppBtn').classList.remove('hidden');
+      window.showToast('Nueva versión lista. Actualiza cuando termines la visita.');
+    }
+
+    function updateInstallButton() {
+      const btn = document.getElementById('installAppBtn');
+      if (!btn) return;
+      if (deferredInstallPrompt) {
+        btn.classList.remove('hidden');
+      } else {
+        btn.classList.add('hidden');
+      }
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      updateInstallButton();
+    });
+
+    window.addEventListener('appinstalled', () => {
+      deferredInstallPrompt = null;
+      updateInstallButton();
+      window.showToast('📲 App instalada en la pantalla de inicio');
+    });
+
+    window.installApp = async function() {
+      if (!deferredInstallPrompt) {
+        window.showToast('ℹ️ Usa el menú del navegador → "Añadir a pantalla de inicio"');
+        return;
+      }
+      deferredInstallPrompt.prompt();
+      try {
+        const choice = await deferredInstallPrompt.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+          window.showToast('📲 Instalando la app...');
+        }
+      } catch (err) {}
+      deferredInstallPrompt = null;
+      updateInstallButton();
+    };
+
+    if (SW_SUPPORTED) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' })
+          .then((reg) => {
+            swRegistration = reg;
+            announceUpdate(reg);
+            checkOfflineStatus();
+            reg.addEventListener('updatefound', () => {
+              const sw = reg.installing;
+              if (!sw) return;
+              sw.addEventListener('statechange', () => {
+                if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                  announceUpdate(reg);
+                }
+                if (sw.state === 'redundant') setOfflineStatus('Actualización incompleta o archivos de distinta versión. Reabre con conexión.', 'error');
+              });
+            });
+          })
+          .catch((err) => {
+            console.warn('Service Worker no registrado:', err);
+            setOfflineStatus('No se pudo preparar el uso offline. Reabre con conexión.', 'error');
+          });
+
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (reloadForUpdate) location.reload();
+          else checkOfflineStatus();
+        });
+        navigator.serviceWorker.addEventListener('message', event => {
+          if (event.data?.type !== 'OFFLINE_STATUS') return;
+          if (!stylesMatchVersion()) {
+            setOfflineStatus('Estilos desactualizados. Reabre con conexión y actualiza la aplicación.', 'error');
+            return;
+          }
+          setOfflineStatus(event.data.ready ? 'Lista para usar sin conexión' : 'Descarga offline incompleta. Reabre con conexión.', event.data.ready ? 'ready' : 'error');
+        });
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') checkOfflineStatus();
+        });
+      });
+    }
+  </script>
+</body>
+</html>
